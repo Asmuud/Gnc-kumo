@@ -141,7 +141,7 @@ function AuthScreen({mode,setMode,busy,message,onLogin,onRegister}:{mode:'login'
       <button className="primary" disabled={busy}>{busy?'Please wait…':mode==='login'?'Sign in':'Submit registration'}</button>
     </form>
     {message && <div className="notice">{message}</div>}
-    <p className="switch">{mode==='login'?"Don't have an account?":'Already registered?'} <button onClick={()=>{setMessage('');setMode(mode==='login'?'register':'login')}}>{mode==='login'?'Create account':'Sign in'}</button></p>
+    <p className="switch">{mode==='login'?"Don't have an account?":'Already registered?'} <button onClick={()=>{setMode(mode==='login'?'register':'login')}}>{mode==='login'?'Create account':'Sign in'}</button></p>
     <small className="privacy">Your personal details are private and visible only to authorised church administrators where necessary.</small>
   </div></section></main>
 }
