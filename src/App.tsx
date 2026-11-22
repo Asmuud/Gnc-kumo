@@ -298,6 +298,7 @@ function Announcements() {
 }
 function Members({role}:{role:string}) {
   const [rows,setRows]=useState<any[]>([])
+  const [selected,setSelected]=useState<any>(null)
   const [busyId,setBusyId]=useState('')
   const [message,setMessage]=useState('')
 
@@ -307,11 +308,17 @@ function Members({role}:{role:string}) {
     if (!supabase || !isAdmin) return
     const {data,error} = await supabase
       .from('profiles')
-      .select('id,full_name,phone,email,approval_status,role')
+      .select('*')
       .order('created_at',{ascending:false})
 
     if (error) setMessage(error.message)
-    else setRows(data || [])
+    else {
+      setRows(data || [])
+      if (selected) {
+        const updated = (data || []).find((r:any)=>r.id===selected.id)
+        setSelected(updated || null)
+      }
+    }
   }
 
   useEffect(()=>{loadMembers()},[role])
@@ -322,14 +329,17 @@ function Members({role}:{role:string}) {
     setBusyId(id)
     setMessage('Updating member status...')
 
-    const {error} = await supabase
+    const {data,error} = await supabase
       .from('profiles')
       .update({approval_status:status})
       .eq('id',id)
       .eq('role','member')
+      .select('*')
 
     if (error) {
       setMessage(error.message)
+    } else if (!data || data.length===0) {
+      setMessage('No changes made. Please check administrator permissions.')
     } else {
       setMessage(status === 'approved'
         ? 'Member approved successfully.'
@@ -353,7 +363,9 @@ function Members({role}:{role:string}) {
       : rows.map(r=><div className="member-row" key={r.id}>
         <div className="avatar">{r.full_name?.[0] || 'M'}</div>
         <div className="member-info">
-          <b>{r.full_name}</b>
+          <button type="button" className="text-button" onClick={()=>setSelected(r)}>
+            {r.full_name} — View details
+          </button>
           <small>{r.email} · {r.phone}</small>
           <small>Role: {r.role}</small>
         </div>
@@ -373,6 +385,26 @@ function Members({role}:{role:string}) {
         )}
       </div>)
     }
+
+    {selected && (
+      <div className="content-card" style={{marginTop:20}}>
+        <h2>Member details</h2>
+        {selected.photo_url && (
+          <img src={selected.photo_url} alt="Member profile" style={{width:110,height:110,borderRadius:'50%',objectFit:'cover'}}/>
+        )}
+        <p><b>Full name:</b> {selected.full_name || 'Not provided'}</p>
+        <p><b>Email:</b> {selected.email || 'Not provided'}</p>
+        <p><b>Phone:</b> {selected.phone || 'Not provided'}</p>
+        <p><b>Address:</b> {selected.address || 'Not provided'}</p>
+        <p><b>Date of birth:</b> {selected.date_of_birth || 'Not provided'}</p>
+        <p><b>Marital status:</b> {selected.marital_status || 'Not provided'}</p>
+        <p><b>Education:</b> {selected.education_level || 'Not provided'}</p>
+        <p><b>Favourite song:</b> {selected.favourite_song || 'Not provided'}</p>
+        <p><b>Role:</b> {selected.role}</p>
+        <p><b>Approval status:</b> {selected.approval_status}</p>
+        <button type="button" onClick={()=>setSelected(null)}>Close details</button>
+      </div>
+    )}
   </section>
 }
 function AdminPanel({role}:{role:string}) {
