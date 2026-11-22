@@ -298,9 +298,82 @@ function Announcements() {
 }
 function Members({role}:{role:string}) {
   const [rows,setRows]=useState<any[]>([])
-  useEffect(()=>{if(role==='member'||!supabase)return;supabase.from('profiles').select('id,full_name,phone,email,approval_status,role').order('full_name').then(({data})=>setRows(data||[]))},[role])
-  if(role==='member')return <Empty title="Members directory" desc="This directory is available to authorised administrators only in this starter build."/>
-  return <section className="content-card"><h2>Member management</h2><p className="muted">Review registered accounts and approval status.</p>{rows.map(r=><div className="member-row" key={r.id}><div className="avatar">{r.full_name?.[0]}</div><div className="member-info"><b>{r.full_name}</b><small>{r.email} · {r.phone}</small></div><span className={`status ${r.approval_status}`}>{r.approval_status}</span></div>)}</section>
+  const [busyId,setBusyId]=useState('')
+  const [message,setMessage]=useState('')
+
+  const isAdmin = role === 'admin' || role === 'super_admin'
+
+  async function loadMembers() {
+    if (!supabase || !isAdmin) return
+    const {data,error} = await supabase
+      .from('profiles')
+      .select('id,full_name,phone,email,approval_status,role')
+      .order('created_at',{ascending:false})
+
+    if (error) setMessage(error.message)
+    else setRows(data || [])
+  }
+
+  useEffect(()=>{loadMembers()},[role])
+
+  async function updateApproval(id:string,status:'approved'|'rejected') {
+    if (!supabase || !isAdmin) return
+
+    setBusyId(id)
+    setMessage('Updating member status...')
+
+    const {error} = await supabase
+      .from('profiles')
+      .update({approval_status:status})
+      .eq('id',id)
+      .eq('role','member')
+
+    if (error) {
+      setMessage(error.message)
+    } else {
+      setMessage(status === 'approved'
+        ? 'Member approved successfully.'
+        : 'Member rejected successfully.')
+      await loadMembers()
+    }
+
+    setBusyId('')
+  }
+
+  if (!isAdmin) return <Empty title="Restricted area" desc="This directory is available to authorised administrators only."/>
+
+  return <section className="content-card">
+    <h2>Member management</h2>
+    <p className="muted">Review registrations and approve or reject member accounts.</p>
+
+    {message && <div className="notice">{message}</div>}
+
+    {rows.length===0
+      ? <Empty title="No members found" desc="Registered members will appear here."/>
+      : rows.map(r=><div className="member-row" key={r.id}>
+        <div className="avatar">{r.full_name?.[0] || 'M'}</div>
+        <div className="member-info">
+          <b>{r.full_name}</b>
+          <small>{r.email} · {r.phone}</small>
+          <small>Role: {r.role}</small>
+        </div>
+        <span className={`status ${r.approval_status}`}>{r.approval_status}</span>
+
+        {r.role === 'member' && r.approval_status !== 'approved' && (
+          <div className="member-actions">
+            <button className="primary" disabled={!!busyId} onClick={()=>updateApproval(r.id,'approved')}>
+              {busyId===r.id?'Please wait...':'Approve'}
+            </button>
+            {r.approval_status !== 'rejected' && (
+              <button disabled={!!busyId} onClick={()=>updateApproval(r.id,'rejected')}>
+                Reject
+              </button>
+            )}
+          </div>
+        )}
+      </div>)
+    }
+  </section>
 }
 function AdminPanel({role}:{role:string}) {
   if(role==='member')return <Empty title="Restricted area" desc="You do not have administrator permissions."/>
