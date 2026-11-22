@@ -63,3 +63,60 @@
 .admin-action-card p{min-height:0}
 .admin-security{padding:15px}
 }
+
+/* Mobile layout improvement */
+.app-shell{align-items:stretch}
+.main{margin:0 auto;min-width:0;align-self:stretch}
+
+@media(max-width:800px){
+  .app-shell{display:block;min-height:100vh}
+  .sidebar{
+    position:fixed;
+    z-index:1000;
+    left:0;
+    right:0;
+    bottom:0;
+    width:100%;
+    height:68px;
+    padding:6px 8px;
+    display:flex;
+    flex-direction:row;
+    align-items:center;
+    gap:5px;
+    overflow-x:auto;
+    overflow-y:hidden;
+  }
+  .brand,.sidebar>.nav-label{display:none}
+  .nav-item,.sidebar .nav-item:not(.active),.sidebar .nav-item.active{
+    flex:0 0 auto;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    align-items:center;
+    gap:3px;
+    min-width:58px;
+    padding:7px 8px;
+    margin:0;
+    font-size:10px;
+    white-space:nowrap;
+  }
+  .nav-item svg{width:18px;height:18px}
+  .sidebar-bottom{margin:0 0 0 auto;flex-shrink:0}
+  .main{
+    width:100%;
+    max-width:none;
+    margin:0;
+    padding:22px 16px 95px;
+  }
+  .topbar{margin-bottom:20px}
+  .content-card{width:100%;min-width:0}
+  .member-row{flex-wrap:wrap}
+}
+
+@media(max-width:460px){
+  .main{padding:18px 13px 90px}
+  .topbar h1{font-size:21px}
+  .user-chip{font-size:11px}
+  .content-card{padding:16px}
+  .member-info{min-width:0;overflow-wrap:anywhere}
+}
