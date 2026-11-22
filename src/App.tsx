@@ -115,7 +115,7 @@ export default function App() {
       {tab==='announcements' && <Announcements />}
       {tab==='members' && <Members role={profile.role}/>}
       {tab==='profile' && <MyProfile profile={profile} onUpdated={setProfile}/>}
-      {tab==='admin' && <AdminPanel role={profile.role}/>}
+      {tab==='admin' && <AdminPanel role={profile.role} onNavigate={setTab}/>}
     </main>
   </div>
 }
@@ -548,8 +548,38 @@ function MyProfile({profile,onUpdated}:{profile:Profile,onUpdated:(profile:Profi
   </section>
 }
 
-function AdminPanel({role}:{role:string}) {
+function AdminPanel({role,onNavigate}:{role:string,onNavigate:(tab:string)=>void}) {
   if(role==='member')return <Empty title="Restricted area" desc="You do not have administrator permissions."/>
-  return <section className="content-card"><div className="admin-banner"><ShieldCheck/><div><b>Administrator workspace</b><p>Signed in with the {role.replace('_',' ')} role.</p></div></div><h2>Administration</h2><p className="muted">The next development step will add secure song uploads, announcement publishing, member approvals and administrator role management.</p><div className="notice"><b>Security note</b><p>Never promote an account by editing browser data. Admin roles must be assigned by the trusted project owner through Supabase's protected database tools.</p></div></section>
+  const sections = [
+    {title:'Member management',desc:'Review registrations and manage member approvals.',icon:Users,tab:'members',action:'Manage members'},
+    {title:'Music library',desc:'Browse and manage the church music collection.',icon:Headphones,tab:'music',action:'Open music library'},
+    {title:'Announcements',desc:'View and publish community announcements.',icon:Bell,tab:'announcements',action:'View announcements'},
+    {title:'My profile',desc:'Review and update your administrator profile.',icon:UserRound,tab:'profile',action:'Open profile'}
+  ]
+  return <section className="admin-dashboard">
+    <div className="admin-hero">
+      <div className="admin-hero-icon"><ShieldCheck size={30}/></div>
+      <div className="admin-hero-copy">
+        <span>GNC KUMO MANAGEMENT</span>
+        <h2>Welcome, Administrator</h2>
+        <p>You are signed in with the {role.replace('_',' ')} role. Manage your church community from one place.</p>
+      </div>
+    </div>
+    <div className="admin-section-heading">
+      <div><h2>Administration</h2><p className="muted">Choose a section to continue managing your community.</p></div>
+    </div>
+    <div className="admin-grid">
+      {sections.map(item=><button type="button" className="admin-action-card" key={item.tab} onClick={()=>onNavigate(item.tab)}>
+        <div className="admin-action-icon"><item.icon size={22}/></div>
+        <b>{item.title}</b>
+        <p>{item.desc}</p>
+        <span>{item.action} <span aria-hidden="true">→</span></span>
+      </button>)}
+    </div>
+    <div className="admin-security">
+      <div className="admin-security-icon"><ShieldCheck size={21}/></div>
+      <div><b>Account security</b><p>Administrator permissions are controlled securely through Supabase. Never change roles by editing browser data.</p></div>
+    </div>
+  </section>
 }
 function Empty({title,desc}:{title:string,desc:string}) { return <div className="empty"><div className="empty-icon"><Music2/></div><b>{title}</b><p>{desc}</p></div> }
