@@ -470,33 +470,80 @@ function MyProfile({profile,onUpdated}:{profile:Profile,onUpdated:(profile:Profi
     }
   }
 
-  return <section className="content-card">
-    <h2>My Profile</h2>
-    <p className="muted">View and update your personal information.</p>
-    {photoUrl && <img src={photoUrl} alt="Your profile" style={{width:110,height:110,borderRadius:'50%',objectFit:'cover'}}/>}
-    <form onSubmit={saveProfile}>
-      <label>Profile photo</label>
-      <input type="file" name="photo" accept="image/*" />
-      <label>Full name</label>
-      <input name="full_name" defaultValue={profile.full_name || ''} required />
-      <label>Email (cannot be changed here)</label>
-      <input value={profile.email || ''} readOnly />
-      <label>Phone</label>
-      <input name="phone" defaultValue={profile.phone || ''} />
-      <label>Address</label>
-      <input name="address" defaultValue={profile.address || ''} />
-      <label>Date of birth</label>
-      <input type="date" name="date_of_birth" defaultValue={profile.date_of_birth || ''} />
-      <label>Marital status</label>
-      <input name="marital_status" defaultValue={profile.marital_status || ''} />
-      <label>Education</label>
-      <input name="education_level" defaultValue={profile.education_level || ''} />
-      <label>Favourite song</label>
-      <input name="favourite_song" defaultValue={profile.favourite_song || ''} />
-      <p><b>Account role:</b> {profile.role}</p>
-      <p><b>Approval status:</b> {profile.approval_status}</p>
-      {message && <p role="status">{message}</p>}
-      <button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button>
+  return <section className="content-card profile-card">
+    <div className="profile-heading">
+      <div>
+        <h2>My Profile</h2>
+        <p className="muted">Manage your personal information and account details.</p>
+      </div>
+    </div>
+
+    <form className="profile-form" onSubmit={saveProfile}>
+      <div className="profile-photo-area">
+        <div className="profile-photo">
+          {photoUrl ? <img src={photoUrl} alt="Your profile"/> : <span>{profile.full_name?.[0] || 'U'}</span>}
+        </div>
+        <label className="photo-upload">
+          <span>Change profile photo</span>
+          <input type="file" name="photo" accept="image/*"/>
+        </label>
+        <small>JPG, PNG or other image formats. Maximum 5 MB.</small>
+      </div>
+
+      <div className="profile-section-title">Personal information</div>
+
+      <label className="profile-field">
+        <span>Full name</span>
+        <input name="full_name" defaultValue={profile.full_name || ''} required/>
+      </label>
+
+      <label className="profile-field">
+        <span>Email address</span>
+        <input value={profile.email || ''} readOnly/>
+        <small>Email cannot be changed here.</small>
+      </label>
+
+      <label className="profile-field">
+        <span>Phone number</span>
+        <input name="phone" type="tel" defaultValue={profile.phone || ''}/>
+      </label>
+
+      <label className="profile-field">
+        <span>Residential address</span>
+        <input name="address" defaultValue={profile.address || ''}/>
+      </label>
+
+      <label className="profile-field">
+        <span>Date of birth</span>
+        <input type="date" name="date_of_birth" defaultValue={profile.date_of_birth || ''}/>
+      </label>
+
+      <label className="profile-field">
+        <span>Marital status</span>
+        <input name="marital_status" defaultValue={profile.marital_status || ''}/>
+      </label>
+
+      <label className="profile-field">
+        <span>Education level</span>
+        <input name="education_level" defaultValue={profile.education_level || ''}/>
+      </label>
+
+      <label className="profile-field">
+        <span>Favourite song</span>
+        <input name="favourite_song" defaultValue={profile.favourite_song || ''}/>
+      </label>
+
+      <div className="profile-section-title">Account information</div>
+      <div className="profile-account-info">
+        <div><span>Account role</span><b>{profile.role}</b></div>
+        <div><span>Approval status</span><b className="profile-approved">{profile.approval_status}</b></div>
+      </div>
+
+      {message && <p className="profile-message" role="status">{message}</p>}
+
+      <button className="profile-save" type="submit" disabled={busy}>
+        {busy ? 'Saving changes…' : 'Save changes'}
+      </button>
     </form>
   </section>
 }
