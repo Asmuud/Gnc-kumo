@@ -237,7 +237,7 @@ function MusicLibrary({role}:{role:string}) {
       setMessage(published ? 'Song uploaded and published successfully.' : 'Song uploaded successfully. It is saved as unpublished.')
       await loadSongs()
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Upload failed. Please try again.')
+      setMessage(err && typeof err === 'object' && 'message' in err ? String(err.message) : String(err))
     } finally {
       setBusy(false)
     }
