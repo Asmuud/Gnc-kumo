@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Bell, BookOpen, Headphones, Home, LogOut, Music2, ShieldCheck, Users, Upload, Download } from 'lucide-react'
+import { Bell, BookOpen, Headphones, Home, LogOut, Music2, ShieldCheck, Users, UserRound, Upload, Download } from 'lucide-react'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 
 type Profile = {
@@ -14,6 +14,7 @@ const nav = [
   { id: 'music', label: 'Music library', icon: Headphones },
   { id: 'announcements', label: 'Announcements', icon: Bell },
   { id: 'members', label: 'Members', icon: Users },
+  { id: 'profile', label: 'My Profile', icon: UserRound },
 ]
 
 export default function App() {
@@ -109,10 +110,11 @@ export default function App() {
     <main className="main">
       <header className="topbar"><div><span className="eyebrow">WELCOME TO GNC KUMO</span><h1>{nav.find(n=>n.id===tab)?.label || 'Admin panel'}</h1></div><div className="user-chip"><div className="avatar">{profile.full_name?.[0] || 'U'}</div><span>{profile.full_name}</span></div></header>
       {tab==='home' && <section className="welcome-card"><div><span className="eyebrow light">FAITH • MUSIC • COMMUNITY</span><h2>Welcome, {profile.full_name?.split(' ')[0]}.</h2><p>Your church community, music and announcements in one place.</p></div><div className="welcome-icon"><Music2 size={54}/></div></section>}
-      {tab==='home' && <div className="quick-grid"><Quick icon={<Headphones/>} title="Music library" desc="Listen to church songs and explore MIDI files." onClick={()=>setTab('music')}/><Quick icon={<Bell/>} title="Announcements" desc="Keep up with church news and programmes." onClick={()=>setTab('announcements')}/><Quick icon={<BookOpen/>} title="My profile" desc="Your account is securely registered." onClick={()=>setTab('home')}/></div>}
+      {tab==='home' && <div className="quick-grid"><Quick icon={<Headphones/>} title="Music library" desc="Listen to church songs and explore MIDI files." onClick={()=>setTab('music')}/><Quick icon={<Bell/>} title="Announcements" desc="Keep up with church news and programmes." onClick={()=>setTab('announcements')}/><Quick icon={<BookOpen/>} title="My profile" desc="Your account is securely registered." onClick={()=>setTab('profile')}/></div>}
       {tab==='music' && <MusicLibrary role={profile.role} />}
       {tab==='announcements' && <Announcements />}
       {tab==='members' && <Members role={profile.role}/>}
+      {tab==='profile' && <MyProfile profile={profile} onUpdated={setProfile}/>}
       {tab==='admin' && <AdminPanel role={profile.role}/>}
     </main>
   </div>
@@ -407,6 +409,98 @@ function Members({role}:{role:string}) {
     )}
   </section>
 }
+
+function MyProfile({profile,onUpdated}:{profile:Profile,onUpdated:(profile:Profile)=>void}) {
+  const [photoUrl,setPhotoUrl] = useState('')
+  const [busy,setBusy] = useState(false)
+  const [message,setMessage] = useState('')
+
+  useEffect(() => {
+    let active = true
+    async function loadPhoto() {
+      if (!profile.photo_url) { setPhotoUrl(''); return }
+      if (profile.photo_url.startsWith('http')) { setPhotoUrl(profile.photo_url); return }
+      if (!supabase) return
+      const { data } = await supabase.storage.from('avatars').createSignedUrl(profile.photo_url, 3600)
+      if (active) setPhotoUrl(data?.signedUrl || '')
+    }
+    loadPhoto()
+    return () => { active = false }
+  }, [profile.photo_url])
+
+  async function saveProfile(e:React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (!supabase) return
+    setBusy(true)
+    setMessage('')
+    const form = new FormData(e.currentTarget)
+    const photo = form.get('photo') as File
+    let photoPath = profile.photo_url
+
+    try {
+      if (photo && photo.size > 0) {
+        if (!photo.type.startsWith('image/')) throw new Error('Please choose an image file.')
+        if (photo.size > 5 * 1024 * 1024) throw new Error('Image must be 5 MB or smaller.')
+        const safeName = photo.name.replace(/[^a-zA-Z0-9._-]/g, '-')
+        const path = `${profile.id}/${Date.now()}-${safeName}`
+        const { error: uploadError } = await supabase.storage.from('avatars').upload(path, photo, { contentType: photo.type })
+        if (uploadError) throw uploadError
+        photoPath = path
+      }
+
+      const changes = {
+        full_name: String(form.get('full_name') || '').trim(),
+        phone: String(form.get('phone') || '').trim(),
+        address: String(form.get('address') || '').trim(),
+        favourite_song: String(form.get('favourite_song') || '').trim(),
+        date_of_birth: String(form.get('date_of_birth') || ''),
+        marital_status: String(form.get('marital_status') || '').trim(),
+        education_level: String(form.get('education_level') || '').trim(),
+        photo_url: photoPath
+      }
+
+      const { data, error } = await supabase.from('profiles').update(changes).eq('id', profile.id).select('*').single()
+      if (error) throw error
+      onUpdated(data as Profile)
+      setMessage('Profile updated successfully.')
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not update profile.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <section className="content-card">
+    <h2>My Profile</h2>
+    <p className="muted">View and update your personal information.</p>
+    {photoUrl && <img src={photoUrl} alt="Your profile" style={{width:110,height:110,borderRadius:'50%',objectFit:'cover'}}/>}
+    <form onSubmit={saveProfile}>
+      <label>Profile photo</label>
+      <input type="file" name="photo" accept="image/*" />
+      <label>Full name</label>
+      <input name="full_name" defaultValue={profile.full_name || ''} required />
+      <label>Email (cannot be changed here)</label>
+      <input value={profile.email || ''} readOnly />
+      <label>Phone</label>
+      <input name="phone" defaultValue={profile.phone || ''} />
+      <label>Address</label>
+      <input name="address" defaultValue={profile.address || ''} />
+      <label>Date of birth</label>
+      <input type="date" name="date_of_birth" defaultValue={profile.date_of_birth || ''} />
+      <label>Marital status</label>
+      <input name="marital_status" defaultValue={profile.marital_status || ''} />
+      <label>Education</label>
+      <input name="education_level" defaultValue={profile.education_level || ''} />
+      <label>Favourite song</label>
+      <input name="favourite_song" defaultValue={profile.favourite_song || ''} />
+      <p><b>Account role:</b> {profile.role}</p>
+      <p><b>Approval status:</b> {profile.approval_status}</p>
+      {message && <p role="status">{message}</p>}
+      <button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button>
+    </form>
+  </section>
+}
+
 function AdminPanel({role}:{role:string}) {
   if(role==='member')return <Empty title="Restricted area" desc="You do not have administrator permissions."/>
   return <section className="content-card"><div className="admin-banner"><ShieldCheck/><div><b>Administrator workspace</b><p>Signed in with the {role.replace('_',' ')} role.</p></div></div><h2>Administration</h2><p className="muted">The next development step will add secure song uploads, announcement publishing, member approvals and administrator role management.</p><div className="notice"><b>Security note</b><p>Never promote an account by editing browser data. Admin roles must be assigned by the trusted project owner through Supabase's protected database tools.</p></div></section>
