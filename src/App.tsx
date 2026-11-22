@@ -47,32 +47,34 @@ export default function App() {
     const form = new FormData(e.currentTarget)
     const email = String(form.get('email'))
     const password = String(form.get('password'))
-    const photo = form.get('photo') as File
-    let photoUrl: string | null = null
+
     try {
-      const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: form.get('full_name') } } })
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: String(form.get('full_name')),
+            phone: String(form.get('phone')),
+            address: String(form.get('address')),
+            favourite_song: String(form.get('favourite_song')),
+            date_of_birth: String(form.get('date_of_birth')),
+            marital_status: String(form.get('marital_status')),
+            education_level: String(form.get('education_level'))
+          }
+        }
+      })
+
       if (error) throw error
       if (!data.user) throw new Error('Account could not be created.')
-      if (photo?.size) {
-        const ext = photo.name.split('.').pop() || 'jpg'
-        const path = `${data.user.id}/profile.${ext}`
-        const upload = await supabase.storage.from('profile-photos').upload(path, photo, { upsert: true })
-        if (upload.error) throw upload.error
-        photoUrl = supabase.storage.from('profile-photos').getPublicUrl(path).data.publicUrl
-      }
-      const payload = {
-        id: data.user.id, full_name: form.get('full_name'), phone: form.get('phone'),
-        email, address: form.get('address'), photo_url: photoUrl,
-        favourite_song: form.get('favourite_song'), date_of_birth: form.get('date_of_birth'),
-        marital_status: form.get('marital_status'), education_level: form.get('education_level'),
-        role: 'member', approval_status: 'pending'
-      }
-      const { error: profileError } = await supabase.from('profiles').insert(payload)
-      if (profileError) throw profileError
-      setMessage('Registration submitted. Please verify your email if required and wait for an administrator to approve your account.')
+
+      setMessage('Registration submitted successfully. Please verify your email and wait for an administrator to approve your account.')
       setMode('login')
-    } catch (err) { setMessage(err instanceof Error ? err.message : 'Registration failed.') }
-    finally { setBusy(false) }
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Registration failed.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function login(e: React.FormEvent<HTMLFormElement>) {
