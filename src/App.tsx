@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Bell, BookOpen, Headphones, Home, LogOut, Music2, ShieldCheck, Users } from 'lucide-react'
+import { Bell, BookOpen, Headphones, Home, LogOut, Music2, ShieldCheck, Users, Upload, Download } from 'lucide-react'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 
 type Profile = {
@@ -110,7 +110,7 @@ export default function App() {
       <header className="topbar"><div><span className="eyebrow">WELCOME TO GNC KUMO</span><h1>{nav.find(n=>n.id===tab)?.label || 'Admin panel'}</h1></div><div className="user-chip"><div className="avatar">{profile.full_name?.[0] || 'U'}</div><span>{profile.full_name}</span></div></header>
       {tab==='home' && <section className="welcome-card"><div><span className="eyebrow light">FAITH • MUSIC • COMMUNITY</span><h2>Welcome, {profile.full_name?.split(' ')[0]}.</h2><p>Your church community, music and announcements in one place.</p></div><div className="welcome-icon"><Music2 size={54}/></div></section>}
       {tab==='home' && <div className="quick-grid"><Quick icon={<Headphones/>} title="Music library" desc="Listen to church songs and explore MIDI files." onClick={()=>setTab('music')}/><Quick icon={<Bell/>} title="Announcements" desc="Keep up with church news and programmes." onClick={()=>setTab('announcements')}/><Quick icon={<BookOpen/>} title="My profile" desc="Your account is securely registered." onClick={()=>setTab('home')}/></div>}
-      {tab==='music' && <MusicLibrary />}
+      {tab==='music' && <MusicLibrary role={profile.role} />}
       {tab==='announcements' && <Announcements />}
       {tab==='members' && <Members role={profile.role}/>}
       {tab==='admin' && <AdminPanel role={profile.role}/>}
@@ -148,10 +148,148 @@ function AuthScreen({mode,setMode,busy,message,onLogin,onRegister}:{mode:'login'
   </div></section></main>
 }
 
-function MusicLibrary() {
+function MusicLibrary({role}:{role:string}) {
   const [songs,setSongs] = useState<any[]>([])
-  useEffect(()=>{ if(!supabase)return; supabase.from('songs').select('*').eq('published',true).order('created_at',{ascending:false}).then(({data})=>setSongs(data||[])) },[])
-  return <section className="content-card"><div className="section-head"><div><h2>Church music</h2><p className="muted">Songs, lyrics and MIDI resources shared by church administrators.</p></div></div>{songs.length===0?<Empty title="No songs published yet" desc="New songs uploaded by the music administrator will appear here."/>:<div className="song-list">{songs.map(song=><article className="song" key={song.id}>{song.cover_url?<img src={song.cover_url} alt="Song cover"/>:<div className="song-cover"><Music2/></div>}<div className="song-info"><b>{song.title}</b><small>{song.artist||'GNC Kumo Music'}</small>{song.audio_url&&<audio controls src={song.audio_url}/>}</div></article>)}</div>}</section>
+  const [busy,setBusy] = useState(false)
+  const [message,setMessage] = useState('')
+
+  async function loadSongs() {
+    if (!supabase) return
+    let query = supabase.from('songs').select('*').order('created_at',{ascending:false})
+    if (role === 'member') query = query.eq('published',true)
+    const {data,error} = await query
+    if (error) setMessage(error.message)
+    else setSongs(data || [])
+  }
+
+  useEffect(()=>{ loadSongs() },[role])
+
+  async function uploadSong(e:React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (!supabase) return
+    const client = supabase
+    const form = e.currentTarget
+    const values = new FormData(form)
+    const title = String(values.get('title') || '').trim()
+    const artist = String(values.get('artist') || '').trim()
+    const category = String(values.get('category') || '').trim()
+    const lyrics = String(values.get('lyrics') || '').trim()
+    const audio = values.get('audio') as File
+    const cover = values.get('cover') as File
+    const midi = values.get('midi') as File
+    const published = values.get('published') === 'on'
+
+    if (!title || !audio || !audio.size) {
+      setMessage('Please enter a song title and select an audio file.')
+      return
+    }
+    if (audio.size > 50 * 1024 * 1024) {
+      setMessage('Audio file must be smaller than 50 MB.')
+      return
+    }
+    if (cover.size > 5 * 1024 * 1024) {
+      setMessage('Cover image must be smaller than 5 MB.')
+      return
+    }
+    if (midi.size > 10 * 1024 * 1024) {
+      setMessage('MIDI file must be smaller than 10 MB.')
+      return
+    }
+
+    setBusy(true)
+    setMessage('Uploading song files…')
+    const id = crypto.randomUUID()
+    const safeName = (file:File) => file.name.replace(/[^a-zA-Z0-9._-]/g,'_')
+    let audioUrl:string | null = null
+    let coverUrl:string | null = null
+    let midiPath:string | null = null
+
+    try {
+      const audioPath = `${id}/${safeName(audio)}`
+      const audioResult = await client.storage.from('song-audio').upload(audioPath,audio)
+      if (audioResult.error) throw audioResult.error
+      audioUrl = client.storage.from('song-audio').getPublicUrl(audioPath).data.publicUrl
+
+      if (cover.size) {
+        const coverPath = `${id}/${safeName(cover)}`
+        const result = await client.storage.from('song-covers').upload(coverPath,cover)
+        if (result.error) throw result.error
+        coverUrl = client.storage.from('song-covers').getPublicUrl(coverPath).data.publicUrl
+      }
+
+      if (midi.size) {
+        midiPath = `${id}/${safeName(midi)}`
+        const result = await client.storage.from('song-midi').upload(midiPath,midi)
+        if (result.error) throw result.error
+      }
+
+      const {error} = await client.from('songs').insert({
+        title, artist, category, lyrics,
+        audio_url:audioUrl,
+        cover_url:coverUrl,
+        midi_url:midiPath,
+        published,
+        created_by:(await client.auth.getUser()).data.user?.id
+      })
+      if (error) throw error
+
+      form.reset()
+      setMessage(published ? 'Song uploaded and published successfully.' : 'Song uploaded successfully. It is saved as unpublished.')
+      await loadSongs()
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Upload failed. Please try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function downloadMidi(path:string) {
+    if (!supabase) return
+    const {data,error} = await supabase.storage.from('song-midi').createSignedUrl(path,3600)
+    if (error) {
+      setMessage(error.message)
+      return
+    }
+    window.open(data.signedUrl,'_blank','noopener,noreferrer')
+  }
+
+  return <section className="content-card">
+    <div className="section-head"><div><h2>Church music</h2><p className="muted">Songs, lyrics and MIDI resources shared by church administrators.</p></div></div>
+
+    {role !== 'member' && <div className="notice">
+      <h3><Upload size={18}/> Upload new music</h3>
+      <form className="form" onSubmit={uploadSong}>
+        <label>Song title<input name="title" required placeholder="Enter song title"/></label>
+        <div className="two">
+          <label>Artist / Choir<input name="artist" placeholder="Artist or choir name"/></label>
+          <label>Category<input name="category" placeholder="e.g. Worship, Praise"/></label>
+        </div>
+        <label>Lyrics<textarea name="lyrics" rows={5} placeholder="Enter song lyrics here"/></label>
+        <label>Audio file (required)<input name="audio" type="file" accept="audio/*" required/></label>
+        <label>Cover image (optional)<input name="cover" type="file" accept="image/*"/></label>
+        <label>MIDI file (optional)<input name="midi" type="file" accept=".mid,.midi,audio/midi"/></label>
+        <label><input name="published" type="checkbox" defaultChecked/> Publish immediately for approved members</label>
+        <button className="primary" disabled={busy}><Upload size={16}/>{busy?'Uploading…':'Upload song'}</button>
+      </form>
+    </div>}
+
+    {message && <div className="notice">{message}</div>}
+
+    <h3>Available songs</h3>
+    {songs.length===0?<Empty title="No songs available" desc="New songs uploaded by the music administrator will appear here."/>:
+      <div className="song-list">{songs.map(song=><article className="song" key={song.id}>
+        {song.cover_url?<img src={song.cover_url} alt="Song cover"/>:<div className="song-cover"><Music2/></div>}
+        <div className="song-info">
+          <b>{song.title}</b>
+          <small>{song.artist||'GNC Kumo Music'}{song.category ? ` · ${song.category}` : ''}</small>
+          {song.audio_url&&<audio controls src={song.audio_url}/>}
+          {song.lyrics&&<details><summary>View lyrics</summary><p style={{whiteSpace:'pre-wrap'}}>{song.lyrics}</p></details>}
+          {song.midi_url&&<button className="secondary" type="button" onClick={()=>downloadMidi(song.midi_url)}><Download size={15}/> Download MIDI</button>}
+          {role !== 'member' && <small>Publication: {song.published?'Published':'Unpublished'}</small>}
+        </div>
+      </article>)}</div>
+    }
+  </section>
 }
 function Announcements() {
   const [items,setItems]=useState<any[]>([])
