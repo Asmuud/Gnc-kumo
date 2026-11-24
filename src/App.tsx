@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Bell, BookOpen, Headphones, Home, LogOut, Music2, ShieldCheck, Users, UserRound, Upload, Download } from 'lucide-react'
+import { Bell, BookOpen, Headphones, Home, LogOut, Music2, ShieldCheck, Users, UserRound, Upload, Download, FileText } from 'lucide-react'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 
 type Profile = {
@@ -12,6 +12,7 @@ type Profile = {
 const nav = [
   { id: 'home', label: 'Overview', icon: Home },
   { id: 'music', label: 'Music library', icon: Headphones },
+  { id: 'documents', label: 'PDF Library', icon: FileText },
   { id: 'announcements', label: 'Announcements', icon: Bell },
   { id: 'members', label: 'Members', icon: Users },
   { id: 'profile', label: 'My Profile', icon: UserRound },
@@ -112,6 +113,7 @@ export default function App() {
       {tab==='home' && <section className="welcome-card"><div><span className="eyebrow light">FAITH • MUSIC • COMMUNITY</span><h2>Welcome, {profile.full_name?.split(' ')[0]}.</h2><p>Your church community, music and announcements in one place.</p></div><div className="welcome-icon"><Music2 size={54}/></div></section>}
       {tab==='home' && <div className="quick-grid"><Quick icon={<Headphones/>} title="Music library" desc="Listen to church songs and explore MIDI files." onClick={()=>setTab('music')}/><Quick icon={<Bell/>} title="Announcements" desc="Keep up with church news and programmes." onClick={()=>setTab('announcements')}/><Quick icon={<BookOpen/>} title="My profile" desc="Your account is securely registered." onClick={()=>setTab('profile')}/></div>}
       {tab==='music' && <MusicLibrary role={profile.role} />}
+      {tab==='documents' && <DocumentsLibrary role={profile.role} userId={profile.id} />}
       {tab==='announcements' && <Announcements />}
       {tab==='members' && <Members role={profile.role}/>}
       {tab==='profile' && <MyProfile profile={profile} onUpdated={setProfile}/>}
@@ -583,3 +585,206 @@ function AdminPanel({role,onNavigate}:{role:string,onNavigate:(tab:string)=>void
   </section>
 }
 function Empty({title,desc}:{title:string,desc:string}) { return <div className="empty"><div className="empty-icon"><Music2/></div><b>{title}</b><p>{desc}</p></div> }
+
+function DocumentsLibrary({role,userId}:{role:string,userId:string}) {
+  const [documents,setDocuments] = useState<any[]>([])
+  const [busy,setBusy] = useState(false)
+  const [message,setMessage] = useState('')
+  const [preview,setPreview] = useState<{title:string,url:string}|null>(null)
+  const isAdmin = role === 'admin' || role === 'super_admin'
+
+  async function loadDocuments() {
+    if (!supabase) return
+    const {data,error} = await supabase
+      .from('documents')
+      .select('*')
+      .order('created_at',{ascending:false})
+    if (error) setMessage(error.message)
+    else setDocuments(data || [])
+  }
+
+  useEffect(()=>{ void loadDocuments() },[])
+
+  async function uploadDocument(e:React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (!supabase || !isAdmin) return
+
+    const form = e.currentTarget
+    const values = new FormData(form)
+    const title = String(values.get('title') || '').trim()
+    const description = String(values.get('description') || '').trim()
+    const file = values.get('pdf') as File
+
+    if (!title || !file || !file.size) {
+      setMessage('Please enter a title and select a PDF file.')
+      return
+    }
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      setMessage('Only PDF files are allowed.')
+      return
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      setMessage('PDF file must not exceed 20 MB.')
+      return
+    }
+
+    setBusy(true)
+    setMessage('Uploading PDF…')
+    const path = `${userId}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`
+
+    try {
+      const uploaded = await supabase.storage.from('documents').upload(path,file,{
+        contentType:'application/pdf',
+        upsert:false
+      })
+      if (uploaded.error) throw uploaded.error
+
+      const {error} = await supabase.from('documents').insert({
+        title,
+        description,
+        file_path:path,
+        uploaded_by:userId
+      })
+
+      if (error) {
+        await supabase.storage.from('documents').remove([path])
+        throw error
+      }
+
+      form.reset()
+      setMessage('PDF uploaded successfully.')
+      setPreview(null)
+      await loadDocuments()
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function openDocument(doc:any) {
+    if (!supabase) return
+    setBusy(true)
+    setMessage('Opening PDF…')
+    const {data,error} = await supabase.storage
+      .from('documents')
+      .createSignedUrl(doc.file_path,3600)
+
+    if (error) setMessage(error.message)
+    else {
+      setPreview({title:doc.title,url:data.signedUrl})
+      setMessage('')
+    }
+    setBusy(false)
+  }
+
+  async function downloadDocument(doc:any) {
+    if (!supabase) return
+    setBusy(true)
+    setMessage('Preparing download…')
+    const {data,error} = await supabase.storage
+      .from('documents')
+      .createSignedUrl(doc.file_path,3600,{download:`${doc.title}.pdf`})
+
+    if (error) {
+      setMessage(error.message)
+    } else {
+      const link = document.createElement('a')
+      link.href = data.signedUrl
+      link.download = `${doc.title}.pdf`
+      link.target = '_blank'
+      link.rel = 'noopener noreferrer'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      setMessage('Download started.')
+    }
+    setBusy(false)
+  }
+
+  async function deleteDocument(doc:any) {
+    if (!supabase || !isAdmin) return
+    if (!window.confirm(`Delete "${doc.title}"? This cannot be undone.`)) return
+
+    setBusy(true)
+    setMessage('Deleting PDF…')
+    const {error} = await supabase.from('documents').delete().eq('id',doc.id)
+
+    if (error) {
+      setMessage(error.message)
+    } else {
+      const removed = await supabase.storage.from('documents').remove([doc.file_path])
+      setDocuments(current=>current.filter(item=>item.id!==doc.id))
+      if (preview?.title === doc.title) setPreview(null)
+      setMessage(removed.error ? 'PDF record deleted, but its storage file could not be removed.' : 'PDF deleted successfully.')
+    }
+    setBusy(false)
+  }
+
+  return <section className="content-card">
+    <div className="section-head">
+      <div>
+        <h2><FileText size={20}/> PDF Library</h2>
+        <p className="muted">Church documents, books and learning materials.</p>
+      </div>
+    </div>
+
+    {isAdmin && <div className="notice">
+      <h3><Upload size={18}/> Upload PDF document</h3>
+      <form className="form" onSubmit={uploadDocument}>
+        <label>Document title
+          <input name="title" required maxLength={150} placeholder="Enter document title"/>
+        </label>
+        <label>Description (optional)
+          <textarea name="description" rows={3} maxLength={1000} placeholder="Brief description of this document"/>
+        </label>
+        <label>Choose PDF file (maximum 20 MB)
+          <input name="pdf" type="file" accept="application/pdf,.pdf" required/>
+        </label>
+        <button className="primary" disabled={busy}>
+          <Upload size={16}/>{busy?'Please wait…':'Upload PDF'}
+        </button>
+      </form>
+    </div>}
+
+    {message && <div className="notice">{message}</div>}
+
+    {preview && <div className="pdf-reader">
+      <div className="section-head">
+        <div><h3>{preview.title}</h3><p className="muted">PDF reader</p></div>
+        <button className="secondary" type="button" onClick={()=>setPreview(null)}>Close</button>
+      </div>
+      <iframe
+        src={preview.url}
+        title={preview.title}
+        style={{width:'100%',height:'70vh',minHeight:400,border:'1px solid #e8e1ee',borderRadius:12}}
+      />
+    </div>}
+
+    <h3>Available documents ({documents.length})</h3>
+    {documents.length===0
+      ? <Empty title="No PDF documents yet" desc="Documents uploaded by church administrators will appear here."/>
+      : <div className="document-list">
+        {documents.map(doc=><article key={doc.id} className="document-item">
+          <div className="document-icon"><FileText size={25}/></div>
+          <div className="document-info">
+            <b>{doc.title}</b>
+            {doc.description && <p>{doc.description}</p>}
+            <small>{new Date(doc.created_at).toLocaleDateString()}</small>
+            <div className="document-actions">
+              <button className="secondary" type="button" disabled={busy} onClick={()=>openDocument(doc)}>
+                <BookOpen size={15}/> Read PDF
+              </button>
+              <button className="secondary" type="button" disabled={busy} onClick={()=>downloadDocument(doc)}>
+                <Download size={15}/> Download
+              </button>
+              {isAdmin && <button className="secondary" type="button" disabled={busy} onClick={()=>deleteDocument(doc)}>
+                Delete
+              </button>}
+            </div>
+          </div>
+        </article>)}
+      </div>
+    }
+  </section>
+}

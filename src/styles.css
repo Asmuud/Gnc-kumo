@@ -120,3 +120,21 @@
   .content-card{padding:16px}
   .member-info{min-width:0;overflow-wrap:anywhere}
 }
+
+/* PDF Library */
+.document-list{display:grid;gap:12px}
+.document-item{display:flex;align-items:flex-start;gap:14px;padding:16px;background:#fff;border:1px solid #eee9f3;border-radius:14px;min-width:0}
+.document-icon{width:46px;height:46px;flex-shrink:0;display:grid;place-items:center;background:#f1e9fa;color:#70449f;border-radius:12px}
+.document-info{min-width:0;flex:1}
+.document-info>b{display:block;overflow-wrap:anywhere}
+.document-info>p{font-size:13px;color:#82798b;line-height:1.6;margin:6px 0}
+.document-info>small{display:block;color:#82798b;font-size:11px;margin-top:6px}
+.document-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.document-actions button{font-size:12px;padding:9px 12px}
+.pdf-reader{margin:18px 0;padding:14px;background:#faf8fc;border:1px solid #eee9f3;border-radius:14px}
+@media(max-width:460px){
+  .document-item{padding:12px;gap:10px}
+  .document-icon{width:40px;height:40px}
+  .document-actions{gap:6px}
+  .document-actions button{font-size:11px;padding:8px 9px}
+}
