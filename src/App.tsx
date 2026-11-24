@@ -114,7 +114,7 @@ export default function App() {
       {tab==='home' && <div className="quick-grid"><Quick icon={<Headphones/>} title="Music library" desc="Listen to church songs and explore MIDI files." onClick={()=>setTab('music')}/><Quick icon={<Bell/>} title="Announcements" desc="Keep up with church news and programmes." onClick={()=>setTab('announcements')}/><Quick icon={<BookOpen/>} title="My profile" desc="Your account is securely registered." onClick={()=>setTab('profile')}/></div>}
       {tab==='music' && <MusicLibrary role={profile.role} />}
       {tab==='documents' && <DocumentsLibrary role={profile.role} userId={profile.id} />}
-      {tab==='announcements' && <Announcements />}
+      {tab==='announcements' && <Announcements role={profile.role} userId={profile.id} />}
       {tab==='members' && <Members role={profile.role}/>}
       {tab==='profile' && <MyProfile profile={profile} onUpdated={setProfile}/>}
       {tab==='admin' && <AdminPanel role={profile.role} onNavigate={setTab}/>}
@@ -295,11 +295,198 @@ function MusicLibrary({role}:{role:string}) {
     }
   </section>
 }
-function Announcements() {
-  const [items,setItems]=useState<any[]>([])
-  useEffect(()=>{if(!supabase)return;supabase.from('announcements').select('*').eq('published',true).order('created_at',{ascending:false}).then(({data})=>setItems(data||[]))},[])
-  return <section className="content-card"><h2>Announcements</h2><p className="muted">Updates and programmes from GNC Kumo.</p>{items.length===0?<Empty title="No announcements yet" desc="Published church updates will appear here."/>:items.map(a=><article className="announcement" key={a.id}><span className="eyebrow">{new Date(a.created_at).toLocaleDateString()}</span><h3>{a.title}</h3><p>{a.body}</p></article>)}</section>
+function Announcements({role,userId}:{role:string,userId:string}) {
+  const [items,setItems] = useState<any[]>([])
+  const [title,setTitle] = useState('')
+  const [body,setBody] = useState('')
+  const [link,setLink] = useState('')
+  const [pinned,setPinned] = useState(false)
+  const [published,setPublished] = useState(true)
+  const [imageFile,setImageFile] = useState<File|null>(null)
+  const [pdfFile,setPdfFile] = useState<File|null>(null)
+  const [videoFile,setVideoFile] = useState<File|null>(null)
+  const [editing,setEditing] = useState<string|null>(null)
+  const [busy,setBusy] = useState(false)
+  const [message,setMessage] = useState('')
+  const isAdmin = role==='admin' || role==='super_admin'
+
+  async function loadAnnouncements() {
+    if (!supabase) return
+    let query = supabase.from('announcements').select('*')
+      .order('pinned',{ascending:false})
+      .order('created_at',{ascending:false})
+    if (!isAdmin) query = query.eq('published',true)
+    const {data,error} = await query
+    if (error) { setMessage(error.message); return }
+    const rows = await Promise.all((data||[]).map(async (item:any) => {
+      const media:any = {}
+      for (const field of ['image_path','pdf_path','video_path']) {
+        if (item[field]) {
+          const {data:file} = await supabase!.storage
+            .from('announcement-media').createSignedUrl(item[field],3600)
+          media[field.replace('_path','_url')] = file?.signedUrl || ''
+        }
+      }
+      return {...item,...media}
+    }))
+    setItems(rows)
+  }
+
+  useEffect(()=>{ loadAnnouncements() },[role])
+
+  function resetForm() {
+    setTitle('')
+    setBody('')
+    setLink('')
+    setPinned(false)
+    setPublished(true)
+    setImageFile(null)
+    setPdfFile(null)
+    setVideoFile(null)
+    setEditing(null)
+  }
+
+  function startEdit(item:any) {
+    setEditing(item.id)
+    setTitle(item.title||'')
+    setBody(item.body||'')
+    setLink(item.link_url||'')
+    setPinned(!!item.pinned)
+    setPublished(!!item.published)
+    setImageFile(null)
+    setPdfFile(null)
+    setVideoFile(null)
+    window.scrollTo({top:0,behavior:'smooth'})
+  }
+
+  async function saveAnnouncement(e:React.FormEvent) {
+    e.preventDefault()
+    if (!supabase || !title.trim()) return
+    const files = [imageFile,pdfFile,videoFile].filter(Boolean) as File[]
+    if (files.some(file=>file.size>50*1024*1024)) {
+      setMessage('Each attachment must be below 50MB.')
+      return
+    }
+    setBusy(true)
+    setMessage('')
+    try {
+      const paths:any = {}
+      const uploadFile = async (file:File|null,field:string) => {
+        if (!file) return
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g,'_')
+        const path = `${userId}/${crypto.randomUUID()}-${safeName}`
+        const {error} = await supabase!.storage.from('announcement-media')
+          .upload(path,file,{upsert:false})
+        if (error) throw error
+        paths[field] = path
+      }
+      await uploadFile(imageFile,'image_path')
+      await uploadFile(pdfFile,'pdf_path')
+      await uploadFile(videoFile,'video_path')
+
+      const record:any = {
+        title:title.trim(),
+        body:body.trim(),
+        link_url:link.trim()||null,
+        pinned,
+        published,
+        created_by:userId
+      }
+      Object.assign(record,paths)
+
+      if (editing) {
+        const {error} = await supabase.from('announcements')
+          .update(record).eq('id',editing)
+        if (error) throw error
+      } else {
+        const {error} = await supabase.from('announcements').insert(record)
+        if (error) throw error
+      }
+      resetForm()
+      setMessage('Announcement saved successfully.')
+      await loadAnnouncements()
+    } catch (error:any) {
+      setMessage(error.message||'Could not save announcement.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function deleteAnnouncement(item:any) {
+    if (!supabase || !window.confirm('Delete this announcement?')) return
+    setBusy(true)
+    const paths = [item.image_path,item.pdf_path,item.video_path].filter(Boolean)
+    const {error} = await supabase.from('announcements').delete().eq('id',item.id)
+    if (error) {
+      setMessage(error.message)
+    } else {
+      if (paths.length) await supabase.storage.from('announcement-media').remove(paths)
+      setMessage('Announcement deleted.')
+      await loadAnnouncements()
+    }
+    setBusy(false)
+  }
+
+  return (
+    <section className="content-card">
+      <h2>Announcements</h2>
+      <p className="muted">Updates and programmes from GNC Kumo.</p>
+
+      {isAdmin && (
+        <form className="announcement-form" onSubmit={saveAnnouncement}>
+          <h3>{editing?'Edit announcement':'Publish announcement'}</h3>
+          <label>Title</label>
+          <input value={title} onChange={e=>setTitle(e.target.value)} required placeholder="Announcement title"/>
+          <label>Message</label>
+          <textarea value={body} onChange={e=>setBody(e.target.value)} rows={5} placeholder="Write announcement details..."/>
+          <label>Image (optional)</label>
+          <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>setImageFile(e.target.files?.[0]||null)}/>
+          <label>PDF document (optional)</label>
+          <input type="file" accept="application/pdf" onChange={e=>setPdfFile(e.target.files?.[0]||null)}/>
+          <label>Video (MP4 or WebM, optional)</label>
+          <input type="file" accept="video/mp4,video/webm" onChange={e=>setVideoFile(e.target.files?.[0]||null)}/>
+          <label>External link (optional)</label>
+          <input type="url" value={link} onChange={e=>setLink(e.target.value)} placeholder="https://example.com"/>
+          <label className="announcement-check">
+            <input type="checkbox" checked={published} onChange={e=>setPublished(e.target.checked)}/> Publish now
+          </label>
+          <label className="announcement-check">
+            <input type="checkbox" checked={pinned} onChange={e=>setPinned(e.target.checked)}/> Pin announcement at top
+          </label>
+          <div className="announcement-actions">
+            <button type="submit" disabled={busy}>{busy?'Saving...':editing?'Update announcement':'Publish announcement'}</button>
+            {editing&&<button type="button" className="secondary" onClick={resetForm}>Cancel</button>}
+          </div>
+        </form>
+      )}
+
+      {message&&<p className="muted">{message}</p>}
+
+      {items.length===0
+        ? <Empty title="No announcements yet" desc="Published church updates will appear here."/>
+        : items.map(item=>(
+          <article className="announcement" key={item.id}>
+            <span className="eyebrow">
+              {new Date(item.created_at).toLocaleDateString()}
+              {item.pinned?' · PINNED':''}
+              {!item.published&&isAdmin?' · DRAFT':''}
+            </span>
+            <h3>{item.title}</h3>
+            <p style={{whiteSpace:'pre-wrap'}}>{item.body}</p>
+            {item.image_url&&<img className="announcement-image" src={item.image_url} alt={item.title}/>}
+            {item.pdf_url&&<p><a href={item.pdf_url} target="_blank" rel="noreferrer">View / Download PDF</a></p>}
+            {item.video_url&&<video className="announcement-video" src={item.video_url} controls/>}
+            {item.link_url&&<p><a href={item.link_url} target="_blank" rel="noreferrer">Open link</a></p>}
+            {isAdmin&&<div className="announcement-actions">
+              <button type="button" className="secondary" onClick={()=>startEdit(item)}>Edit</button>
+              <button type="button" className="secondary" disabled={busy} onClick={()=>deleteAnnouncement(item)}>Delete</button>
+            </div>}
+          </article>
+        ))}
+    </section>
+  )
 }
+
 function Members({role}:{role:string}) {
   const [rows,setRows]=useState<any[]>([])
   const [selected,setSelected]=useState<any>(null)

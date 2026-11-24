@@ -138,3 +138,15 @@
   .document-actions{gap:6px}
   .document-actions button{font-size:11px;padding:8px 9px}
 }
+/* Announcements */
+.announcement-form{display:grid;gap:10px;padding:18px;margin:18px 0 24px;background:#faf8fc;border:1px solid #e9e2ef;border-radius:14px}
+.announcement-form h3{margin:0 0 8px;font:700 17px Manrope}
+.announcement-form label{font-size:13px;font-weight:600;color:#51465e}
+.announcement-form input:not([type="checkbox"]),.announcement-form textarea{width:100%;padding:12px;border:1px solid #ded6e7;border-radius:9px;background:white;font:inherit}
+.announcement-form input[type="file"]{font-size:12px}
+.announcement-check{display:flex;align-items:center;gap:9px}
+.announcement-check input{width:17px;height:17px}
+.announcement-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.announcement-image{display:block;width:100%;max-height:360px;object-fit:contain;border-radius:12px;margin:12px 0}
+.announcement-video{display:block;width:100%;max-height:360px;border-radius:12px;margin:12px 0;background:#17121e}
+.announcement a{color:#6840a0;font-weight:600}
