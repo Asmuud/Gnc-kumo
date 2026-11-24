@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Bell, BookOpen, Headphones, Home, LogOut, Music2, ShieldCheck, Users, UserRound, Upload, Download, FileText } from 'lucide-react'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
+import { saveOfflineDocument, getOfflineDocument, removeOfflineDocument, listOfflineDocuments } from './lib/offlineFiles'
 
 type Profile = {
   id: string; full_name: string; phone: string; email: string; address: string
@@ -775,10 +776,22 @@ function Empty({title,desc}:{title:string,desc:string}) { return <div className=
 
 function DocumentsLibrary({role,userId}:{role:string,userId:string}) {
   const [documents,setDocuments] = useState<any[]>([])
+  const [offlineIds,setOfflineIds] = useState<string[]>([])
   const [busy,setBusy] = useState(false)
   const [message,setMessage] = useState('')
   const [preview,setPreview] = useState<{title:string,url:string}|null>(null)
   const isAdmin = role === 'admin' || role === 'super_admin'
+
+  async function refreshOfflineIds() {
+    try {
+      const saved = await listOfflineDocuments()
+      setOfflineIds(saved.map(item => item.id))
+      return saved
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err))
+      return []
+    }
+  }
 
   async function loadDocuments() {
     if (!supabase) return
@@ -790,7 +803,7 @@ function DocumentsLibrary({role,userId}:{role:string,userId:string}) {
     else setDocuments(data || [])
   }
 
-  useEffect(()=>{ void loadDocuments() },[])
+  useEffect(()=>{ void loadDocuments(); void refreshOfflineIds() },[])
 
   async function uploadDocument(e:React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -849,20 +862,47 @@ function DocumentsLibrary({role,userId}:{role:string,userId:string}) {
     }
   }
 
-  async function openDocument(doc:any) {
+  async function saveDocumentOffline(doc:any) {
     if (!supabase) return
     setBusy(true)
-    setMessage('Opening PDF…')
-    const {data,error} = await supabase.storage
-      .from('documents')
-      .createSignedUrl(doc.file_path,3600)
+    setMessage("Saving PDF for offline reading…")
+    try {
+      const {data,error} = await supabase.storage.from("documents").download(doc.file_path)
+      if (error) throw error
+      if (!data) throw new Error("PDF download returned no file.")
+      await saveOfflineDocument(doc.id,doc.title,data)
+      await refreshOfflineIds()
+      setMessage("PDF saved successfully. You can now read it offline.")
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
 
-    if (error) setMessage(error.message)
-    else {
+  async function openDocument(doc:any) {
+    setBusy(true)
+    setMessage('Opening PDF…')
+    try {
+      const saved = await getOfflineDocument(doc.id)
+      if (saved) {
+        const url = URL.createObjectURL(saved.blob)
+        setPreview({title:doc.title,url})
+        setMessage('Opened saved offline PDF.')
+        return
+      }
+      if (!supabase) throw new Error('This PDF is not saved offline. Connect to the internet first.')
+      const {data,error} = await supabase.storage
+        .from('documents')
+        .createSignedUrl(doc.file_path,3600)
+      if (error) throw error
       setPreview({title:doc.title,url:data.signedUrl})
       setMessage('')
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
     }
-    setBusy(false)
   }
 
   async function downloadDocument(doc:any) {
@@ -887,6 +927,19 @@ function DocumentsLibrary({role,userId}:{role:string,userId:string}) {
       setMessage('Download started.')
     }
     setBusy(false)
+  }
+
+  async function removeDocumentOffline(doc:any) {
+    setBusy(true)
+    try {
+      await removeOfflineDocument(doc.id)
+      await refreshOfflineIds()
+      setMessage("Offline copy removed from this device.")
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function deleteDocument(doc:any) {
@@ -962,6 +1015,12 @@ function DocumentsLibrary({role,userId}:{role:string,userId:string}) {
               <button className="secondary" type="button" disabled={busy} onClick={()=>openDocument(doc)}>
                 <BookOpen size={15}/> Read PDF
               </button>
+              <button className="secondary" type="button" disabled={busy || offlineIds.includes(doc.id)} onClick={()=>saveDocumentOffline(doc)}>
+                <Download size={15}/> {offlineIds.includes(doc.id) ? 'Saved Offline' : 'Save Offline'}
+              </button>
+              {offlineIds.includes(doc.id) && <button className="secondary" type="button" disabled={busy} onClick={()=>removeDocumentOffline(doc)}>
+                Remove Offline Copy
+              </button>}
               <button className="secondary" type="button" disabled={busy} onClick={()=>downloadDocument(doc)}>
                 <Download size={15}/> Download
               </button>
